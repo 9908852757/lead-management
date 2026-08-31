@@ -464,6 +464,7 @@
         <div class="profile-copy"><strong id="profileName"></strong><small id="profileEmail"></small></div>
         <button id="addClientButton" class="secondary">Add Client</button>
         <button id="newCallButton" class="primary">New Call</button>
+        <button id="refreshDataButton" class="ghost small-button" type="button" title="Refresh data from Google Sheets">Refresh Data</button>
         <button id="themeToggle" class="ghost small-button" type="button" title="Switch light or dark mode">Dark Mode</button>
         <button id="disconnectButton" class="ghost small-button" title="Disconnect staff profile">Disconnect</button>
       </div>
@@ -1165,11 +1166,16 @@
         if (!data.isConnected) {
           $('appShell').classList.add('hidden');
           $('connectGate').classList.remove('hidden');
-          $('connectName').value = data.staffName || '';
-          $('connectEmail').value = data.calendarEmail || data.activeEmail || '';
-          $('connectPhone').value = data.officeContact || '';
+          $('connectName').value = data.staffName || $('connectName').value || '';
+          $('connectEmail').value = data.calendarEmail || data.activeEmail || $('connectEmail').value || '';
+          $('connectPhone').value = data.officeContact || $('connectPhone').value || '';
           return;
         }
+        localStorage.setItem('cetusStaffProfile', JSON.stringify({
+          name: data.staffName || '',
+          email: data.calendarEmail || '',
+          officeContact: data.officeContact || '',
+        }));
         $('connectGate').classList.add('hidden');
         $('appShell').classList.remove('hidden');
         renderAll();
@@ -1894,11 +1900,32 @@
 
     async function refreshInBackground() {
       const data = await server('getInitialData');
+      if (!data.isConnected) throw new Error('The saved Google connection is unavailable. Use Disconnect only if you want to change the staff account.');
       state.data = data;
       state.metrics = null;
+      state.leadSourcesLastRefresh = Date.now();
       renderAll();
-      if ($('metricsView').classList.contains('active') && data.canViewMetrics) loadMetrics();
-      if ($('nacView').classList.contains('active')) loadNacData();
+      if ($('metricsView').classList.contains('active') && data.canViewMetrics) await loadMetrics();
+      if ($('nacView').classList.contains('active')) await loadNacData();
+      if ($('messageView').classList.contains('active')) await loadTodayMessage();
+    }
+
+    async function refreshAppData() {
+      const button = $('refreshDataButton');
+      const originalText = button.textContent;
+      button.disabled = true;
+      button.textContent = 'Refreshing...';
+      setLoading(true);
+      try {
+        await refreshInBackground();
+        toast('Latest data refreshed from Google Sheets.');
+      } catch (error) {
+        toast(error.message, 'error');
+      } finally {
+        button.disabled = false;
+        button.textContent = originalText;
+        setLoading(false);
+      }
     }
 
     async function loadNacData(showToast = false) {
@@ -1941,7 +1968,11 @@
 
     $('disconnectButton').addEventListener('click', async () => {
       setLoading(true);
-      try { await server('disconnectCalendar'); await loadData(); }
+      try {
+        await server('disconnectCalendar');
+        localStorage.removeItem('cetusStaffProfile');
+        await loadData();
+      }
       catch (error) { toast(error.message, 'error'); }
       finally { setLoading(false); }
     });
@@ -1955,6 +1986,7 @@
     $('metricsTo').addEventListener('change', () => document.querySelectorAll('[data-metrics-preset]').forEach(button => button.classList.remove('selected')));
     $('applyMetrics').addEventListener('click', loadMetrics);
     window.addEventListener('resize', fitMetricKpiValues);
+    $('refreshDataButton').addEventListener('click', refreshAppData);
     $('themeToggle').addEventListener('click', toggleTheme);
     $('addLeadSourceButton').addEventListener('click', addLeadSourceRow);
     $('saveLeadSourcesButton').addEventListener('click', saveLeadSourcesFromUi);
@@ -2193,7 +2225,7 @@
       $('connectPhone').value = '8098520490';
     }
     window.setInterval(() => refreshLeadSources(), 60000);
-    setLoading(false);
+    loadData();
   </script>
 </body>
 </html>
