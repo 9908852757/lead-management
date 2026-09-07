@@ -2076,7 +2076,8 @@
       const clientsWereLoaded = Boolean(state.data?.clientsLoaded);
       const data = await server('getInitialData');
       if (!data.isConnected) throw new Error('The saved Google connection is unavailable. Use Disconnect only if you want to change the staff account.');
-      if (clientsWereLoaded) {
+      const initialResponseHasClients = Boolean(data.clientsLoaded);
+      if (!initialResponseHasClients && clientsWereLoaded) {
         data.clients = previousClients;
         data.converted = previousConverted;
         data.clientsLoaded = true;
@@ -2085,7 +2086,7 @@
       state.metrics = null;
       state.leadSourcesLastRefresh = Date.now();
       renderAll();
-      if (options.refreshClients && clientsWereLoaded) await loadClientsData(false, true);
+      if (options.refreshClients && clientsWereLoaded && !initialResponseHasClients) await loadClientsData(false, true);
       if ($('metricsView').classList.contains('active') && data.canViewMetrics) await loadMetrics();
       if ($('nacView').classList.contains('active')) await loadNacData();
       if ($('messageView').classList.contains('active')) await loadTodayMessage();
